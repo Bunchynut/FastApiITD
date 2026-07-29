@@ -25,7 +25,7 @@ class BaseRepository():
         return res
 
     async def add(self,data: BaseModel):
-        add_hotel_stmt = (insert(self.model).values(**data))
+        add_hotel_stmt = (insert(self.model).values(**data).returning(self.model))
         result = await self.session.execute(add_hotel_stmt)
         return result.scalars().one()
 
