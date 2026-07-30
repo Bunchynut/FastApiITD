@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 from src.model.users import SexEnum
 
 
-class UserRequests(BaseModel):
+class UserRegister(BaseModel):
     email: EmailStr
     password: str
     number: str
@@ -29,3 +29,16 @@ class UserId(BaseModel):
     second_name: str
     sex: SexEnum
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password:str
+
+
+class UserId_With_Hashed(UserId):
+    hashed_password: str
+
+
+class UserResponse(BaseModel):
+    access_token: str
