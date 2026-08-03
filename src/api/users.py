@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Response, Request, HTTPException
+from fastapi import APIRouter, Response, HTTPException
 
 from src.DataBase import async_session_maker
-from src.Schemas.users import UserRegister, UserAdd, UserLogin, UserResponse, UserId
+from src.Schemas.users import UserRegister, UserAdd, UserLogin, UserId
+from src.api.Dependencied import UserIdDep
 from src.repositories.users import UsersRepository
 from src.serves.auth import auth
 
@@ -35,10 +36,13 @@ async def post_users(data: UserRegister):
 
 
 @router.get('/only_auth',summary='Получение данных куки',response_model=UserId)
-async def only_auth(request: Request):
-    access_token = request.cookies.get('access_token', None)
-    data = auth().decode_token(access_token)
-    user_id = data['user_id']
+async def only_auth(user_id: UserIdDep):
     async with async_session_maker() as session:
         user = await UsersRepository(session).get_one_or_none(id=user_id)
         return user
+
+
+@router.post('/out_system',summary='Выход из системы')
+async def out_system(response: Response):
+    response.delete_cookie('access_token')
+    return {'status': 'Ok'}
