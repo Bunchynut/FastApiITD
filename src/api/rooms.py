@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query, Body, HTTPException, Path
 
 from src.DataBase import async_session_maker
-from src.Schemas.rooms import RoomsSchema, RoomsPutSchema
+from src.Schemas.rooms import RoomsId, RoomsPutSchema, RoomsAdd
 from src.repositories.hotels import HotelsRepositories
 from src.repositories.rooms import RoomsRepositories
 
@@ -26,7 +26,7 @@ async def get_rooms(id: int | None = Query(None,description='Айди'),
 
 
 @router.post('',summary='Добавить номер')
-async def post_rooms(Schema:RoomsSchema = Body(openapi_examples={
+async def post_rooms(Schema:RoomsAdd = Body(openapi_examples={
     "1": {
         "summary": "1",
         "value": {

@@ -1,12 +1,18 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class RoomsSchema(BaseModel):
+class RoomsAdd(BaseModel):
     hotel_id : int
     title: str
     description: str
     price: int
     quantity: int
+
+
+class RoomsId(RoomsAdd):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RoomsPutSchema(BaseModel):
