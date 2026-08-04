@@ -1,32 +1,29 @@
 from fastapi import APIRouter, Query, Body, HTTPException, Path
 
-from src.DataBase import async_session_maker
-from src.Schemas.rooms import RoomsId, RoomsPutSchema, RoomsAdd
-from src.repositories.hotels import HotelsRepositories
-from src.repositories.rooms import RoomsRepositories
+from src.Schemas.rooms import  RoomsPutSchema, RoomsAdd
+from src.api.Dependencied import DBDep
 
 router = APIRouter(prefix='/rooms', tags=['Номера'])
 
 
 @router.get('',summary='Получить данные номера')
-async def get_rooms(id: int | None = Query(None,description='Айди'),
+async def get_rooms(db: DBDep,id: int | None = Query(None,description='Айди'),
     hotel_id: int | None = Query(None,description='Айди отеля'),
     title: str | None = Query(None,description='Заголовок'),
     description: str | None = Query(None,description='Описание'),
     price: int | None = Query(None,description='Цена'),
     quantity: int | None = Query(None,description='Кол-во')):
-    async with async_session_maker() as session:
-        return await RoomsRepositories(session).get_all(
-            id = id,
-            hotel_id = hotel_id,
-            title = title,
-            description = description,
-            price = price,
-            quantity = quantity)
+    return await db.rooms.get_all(
+        id = id,
+        hotel_id = hotel_id,
+        title = title,
+        description = description,
+        price = price,
+        quantity = quantity)
 
 
 @router.post('',summary='Добавить номер')
-async def post_rooms(Schema:RoomsAdd = Body(openapi_examples={
+async def post_rooms(db: DBDep,Schema:RoomsAdd = Body(openapi_examples={
     "1": {
         "summary": "1",
         "value": {
@@ -49,34 +46,30 @@ async def post_rooms(Schema:RoomsAdd = Body(openapi_examples={
     }
 })
 ):
-    async with async_session_maker() as session:
-        Hotel = await HotelsRepositories(session).get_one_or_none(id=Schema.hotel_id)
-        if Hotel is None:
-            raise HTTPException(status_code=404,detail='Неверный айди отеля')
-        await RoomsRepositories(session).add(Schema.model_dump())
-        await session.commit()
+    Hotel = await db.hotels.get_one_or_none(id=Schema.hotel_id)
+    if Hotel is None:
+        raise HTTPException(status_code=404,detail='Неверный айди отеля')
+    await db.rooms.add(Schema.model_dump())
+    await db.commit()
     return {'status':'OK','data':Schema.model_dump()}
 
 
 @router.delete('/{id}',summary='Удалить номер')
-async def delete_rooms(id:int = Path(description='Айди номера')):
-    async with async_session_maker() as session:
-        await RoomsRepositories(session).delete(id=id)
-        await session.commit()
+async def delete_rooms(db: DBDep,id:int = Path(description='Айди номера')):
+        await db.rooms.delete(id=id)
+        await db.commit()
         return {'status','OK'}
 
 
 @router.put('/{id}/{hotel_id}',summary='Полностью поменять обьект')
-async def put_rooms(Schema:RoomsPutSchema,hotel_id:int | None = Path(description='Введите айди отеля'), id:int | None = Path(description='Введите айди номера')):
-    async with async_session_maker() as session:
-        await RoomsRepositories(session).put(id=id,hotel_id=hotel_id,data=Schema)
-        await session.commit()
+async def put_rooms(db: DBDep,Schema:RoomsPutSchema,hotel_id:int | None = Path(description='Введите айди отеля'), id:int | None = Path(description='Введите айди номера')):
+    await db.rooms.put(id=id,hotel_id=hotel_id,data=Schema)
+    await db.commit()
     return {'status','OK'}
 
 
 @router.patch('/{id}/{hotel_id}',summary='Частично поменять обьект')
-async def patch_rooms(Schema:RoomsPutSchema,hotel_id:int | None = Path(description='Введите айди отеля'), id:int | None = Path(description='Введите айди номера')):
-    async with async_session_maker() as session:
-        await RoomsRepositories(session).put(id=id,hotel_id=hotel_id,data=Schema,exclude_unset=True)
-        await session.commit()
+async def patch_rooms(db: DBDep,Schema:RoomsPutSchema,hotel_id:int | None = Path(description='Введите айди отеля'), id:int | None = Path(description='Введите айди номера')):
+    await db.rooms.put(id=id,hotel_id=hotel_id,data=Schema,exclude_unset=True)
+    await db.commit()
     return {'status','OK'}
