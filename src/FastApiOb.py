@@ -7,6 +7,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from src.api.Hotels import router as hotels_router
 from src.api.users import router as users_router
 from src.api.rooms import router as rooms_router
+from src.api.booking import router as booking_router
 from src.config import settings
 print(f'{settings.DB_NAME=}')
 
@@ -15,6 +16,7 @@ app = FastAPI(docs_url=None, redoc_url=None)
 app.include_router(users_router)
 app.include_router(hotels_router)
 app.include_router(rooms_router)
+app.include_router(booking_router)
 
 
 @app.get("/docs", include_in_schema=False)

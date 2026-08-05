@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from dataclasses import Field
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from src.model.users import SexEnum
 
@@ -15,7 +17,7 @@ class UserRegister(BaseModel):
 class UserAdd(BaseModel):
     email: EmailStr
     hashed_password: str
-    number: str
+    number: str = Field(pattern=r'^\+?[0-9]{10,15}$')
     first_name: str
     second_name: str
     sex: SexEnum
