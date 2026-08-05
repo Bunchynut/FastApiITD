@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from src.Schemas.booking import AddBookingRequest, BookingId, BookingGet
-from src.Schemas.users import UserId
+from src.Schemas.booking import AddBookingRequest
 from src.api.Dependencied import DBDep, UserIdDep
 
 router = APIRouter(prefix='/booking',tags=['Бронирование'])
@@ -31,8 +30,5 @@ async def get_all_booking(db:DBDep):
 
 
 @router.get('/me',summary='Получить данные бронирования по айди')
-async def get_user_booking(db:DBDep,user_id: UserIdDep)->UserId:
-    get = await db.users.get_one_or_none(id=user_id)
-    if not get:
-        raise HTTPException(status_code=404,detail='Нет такого юзера')
-    return get
+async def get_user_booking(db:DBDep,user_id: UserIdDep):
+    return await db.booking.get_filtered(user_id=user_id)
