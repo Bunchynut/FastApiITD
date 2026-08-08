@@ -1,9 +1,22 @@
+from datetime import date
+
 from fastapi import APIRouter, Query, Body, HTTPException, Path
 
+from src.Schemas.facilities import RoomsFacilityAdd
 from src.Schemas.rooms import  RoomsPutSchema, RoomsAdd
 from src.api.Dependencied import DBDep
 
 router = APIRouter(prefix='/rooms', tags=['Номера'])
+
+
+@router.get("/{hotel_id}/rooms",summary='Узнать свободные номера')
+async def get_rooms(
+        hotel_id: int,
+        db: DBDep,
+        date_from: date = Query(example="2026-08-01"),
+        date_to: date = Query(example="2026-08-10"),
+):
+    return await db.rooms.get_filtered_by_time(hotel_id=hotel_id, date_from=date_from, date_to=date_to)
 
 
 @router.get('',summary='Получить данные номера')
@@ -23,33 +36,14 @@ async def get_rooms(db: DBDep,id: int | None = Query(None,description='Айди'
 
 
 @router.post('',summary='Добавить номер')
-async def post_rooms(db: DBDep,Schema:RoomsAdd = Body(openapi_examples={
-    "1": {
-        "summary": "1",
-        "value": {
-            "hotel_id": "1",
-            "title": "Номер с одной двухспальной кроватью",
-            "description": "Однокомнатный номер с одной двухспальной кроватью, душем и доп. опциями и т.д. ",
-            "price": "3000",
-            "quantity": "10",
-        }
-    },
-    "2": {
-        "summary": "2",
-        "value": {
-            "hotel_id": "2",
-            "title": "Номер с двумя односпальными корватями",
-            "description": "Однокомнатный номер с двумя односпальными кроватями и т.д.",
-            "price": "2499",
-            "quantity": "10",
-        }
-    }
-})
-):
+async def post_rooms(db: DBDep,Schema:RoomsAdd = Body()):
     Hotel = await db.hotels.get_one_or_none(id=Schema.hotel_id)
     if Hotel is None:
         raise HTTPException(status_code=404,detail='Неверный айди отеля')
-    await db.rooms.add(Schema.model_dump())
+
+    room = await db.rooms.add(Schema.model_dump(exclude={'facilities_ids'}))
+    rooms_facilities_data = [RoomsFacilityAdd(room_id=room.id, facility_id=f_id)for f_id in Schema.facilities_ids]
+    await db.rooms_facilities.add_bulk(rooms_facilities_data)
     await db.commit()
     return {'status':'OK','data':Schema.model_dump()}
 

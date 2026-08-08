@@ -7,7 +7,7 @@ class RoomsAdd(BaseModel):
     description: str
     price: int
     quantity: int
-
+    facilities_ids: list[int] | None = None
 
 class RoomsId(RoomsAdd):
     id: int
