@@ -1,24 +1,38 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.openapi.docs import (get_swagger_ui_html)
 import uvicorn
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
+
+from src.init import redis_manager
+
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.redis import RedisBackend
+
 from src.api.Hotels import router as hotels_router
 from src.api.users import router as users_router
 from src.api.rooms import router as rooms_router
 from src.api.booking import router as booking_router
 from src.api.facilities import router as facilities_router
+from src.api.images import router as images_router
 from src.config import settings
 print(f'{settings.DB_NAME=}')
 
-app = FastAPI(docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await redis_manager.connect()
+    FastAPICache.init(RedisBackend(redis_manager.redis), prefix='fastapi-cache')
+    yield
+    await redis_manager.close()
+
+app = FastAPI(docs_url=None, redoc_url=None, lifespan=lifespan)
 
 app.include_router(users_router)
 app.include_router(hotels_router)
 app.include_router(rooms_router)
 app.include_router(booking_router)
 app.include_router(facilities_router)
+app.include_router(images_router)
 
 
 @app.get("/docs", include_in_schema=False)

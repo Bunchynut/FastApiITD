@@ -5,10 +5,15 @@ from fastapi import Query, Path, Body, APIRouter
 from src.Schemas.Schemas import HotelPost, HotelPatch
 from src.api.Dependencied import paginationDep, DBDep
 
+
+from fastapi_cache.decorator import cache
+
+
 router = APIRouter(prefix='/hotels', tags=['Отели'])
 
 
 @router.get('', summary='Получить данные')
+@cache(expire=10)
 async def get_hotels(
             pagination: paginationDep,
             db: DBDep,

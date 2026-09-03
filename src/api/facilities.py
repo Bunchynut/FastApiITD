@@ -1,16 +1,22 @@
+import json
+
 from fastapi import APIRouter
+from fastapi_cache.decorator import cache
+
 
 from src.Schemas.facilities import FacilityAdd
 from src.api.Dependencied import DBDep
+from src.init import redis_manager
 
 router = APIRouter(prefix='/facilities', tags=['Опции'])
 
 
 @router.get('/',summary='Получить опции')
-async def get_facilities(db:DBDep,
-                         id:int,
-                         title:str):
-    return await db.facilities.get_filtered(id=id,title=title)
+@cache(expire=10)
+async def get_facilities(db:DBDep):
+    return await db.facilities.get_all()
+
+
 
 
 @router.post('/',summary='Добавить опцию')

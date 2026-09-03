@@ -4,12 +4,12 @@ from sqlalchemy import select, insert
 from src.Schemas.users import UserId, UserId_With_Hashed
 from src.model.users import UsersOrm
 from src.repositories.base import BaseRepository
-
+from src.repositories.mappers.mapper import UserDataMapper
 
 
 class UsersRepository(BaseRepository):
     model = UsersOrm
-    schema = UserId
+    mapper = UserDataMapper
 
 
 

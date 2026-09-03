@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Query, Body, HTTPException, Path
 
 from src.Schemas.facilities import RoomsFacilityAdd
-from src.Schemas.rooms import  RoomsPutSchema, RoomsAdd
+from src.Schemas.rooms import RoomsPutSchema, RoomsAdd, PutRoomsPutSchema, RoomsPatchSchema
 from src.api.Dependencied import DBDep
 
 router = APIRouter(prefix='/rooms', tags=['Номера'])
@@ -20,20 +20,11 @@ async def get_rooms(
 
 
 @router.get('',summary='Получить данные номера')
-async def get_rooms(db: DBDep,id: int | None = Query(None,description='Айди'),
-    hotel_id: int | None = Query(None,description='Айди отеля'),
-    title: str | None = Query(None,description='Заголовок'),
-    description: str | None = Query(None,description='Описание'),
-    price: int | None = Query(None,description='Цена'),
-    quantity: int | None = Query(None,description='Кол-во')):
-    return await db.rooms.get_all(
+async def get_rooms(db: DBDep,id: int | None = Query(None,description='Айди номера'),
+    hotel_id: int | None = Query(None,description='Айди отеля')):
+    return await db.rooms.get_one_or_none_with_option(
         id = id,
-        hotel_id = hotel_id,
-        title = title,
-        description = description,
-        price = price,
-        quantity = quantity)
-
+        hotel_id = hotel_id)
 
 @router.post('',summary='Добавить номер')
 async def post_rooms(db: DBDep,Schema:RoomsAdd = Body()):
@@ -55,15 +46,21 @@ async def delete_rooms(db: DBDep,id:int = Path(description='Айди номер�
         return {'status','OK'}
 
 
-@router.put('/{id}/{hotel_id}',summary='Полностью поменять обьект')
-async def put_rooms(db: DBDep,Schema:RoomsPutSchema,hotel_id:int | None = Path(description='Введите айди отеля'), id:int | None = Path(description='Введите айди номера')):
-    await db.rooms.put(id=id,hotel_id=hotel_id,data=Schema)
+@router.put('/{room_id}/{hotel_id}',summary='Полностью поменять обьект')
+async def put_rooms(room_id: int,db: DBDep,Schema:PutRoomsPutSchema,hotel_id:int | None = Path(description='Введите айди отеля')):
+    await db.rooms.put(id=room_id,hotel_id=hotel_id,data=Schema)
+    await db.rooms_facilities.set_rooms_facility(room_id, facilities_ids=Schema.facilities_ids)
     await db.commit()
     return {'status','OK'}
 
 
-@router.patch('/{id}/{hotel_id}',summary='Частично поменять обьект')
-async def patch_rooms(db: DBDep,Schema:RoomsPutSchema,hotel_id:int | None = Path(description='Введите айди отеля'), id:int | None = Path(description='Введите айди номера')):
-    await db.rooms.put(id=id,hotel_id=hotel_id,data=Schema,exclude_unset=True)
+@router.patch('/{room_id}/{hotel_id}',summary='Частично поменять обьект')
+async def patch_rooms(room_id: int,db: DBDep,Schema:RoomsPatchSchema,hotel_id:int | None = Path(description='Введите айди отеля')):
+    room_dict = Schema.model_dump(exclude_unset=True)
+    room_data = {k: v for k, v in room_dict.items() if k != 'facilities_ids'}
+    if room_data:
+        await db.rooms.put(room_data,id=room_id,hotel_id=hotel_id,data=Schema,exclude_unset=True)
+    if 'facilities_ids' in room_dict:
+        await db.rooms_facilities.set_rooms_facility(room_id, facilities_ids=room_dict['facilities_ids'])
     await db.commit()
     return {'status','OK'}
