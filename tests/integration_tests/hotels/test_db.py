@@ -3,8 +3,7 @@ from src.Schemas.Schemas import HotelPost
 from src.utils.db_manager import DBManager
 
 
-async def test_add_hotel():
+async def test_add_hotel(db):
     hotel_data = HotelPost(title='Hotel1', location='New York')
-    async with DBManager(session_factory=async_session_maker_null_pull) as db:
-        await db.hotels.add(hotel_data)
-        await db.commit()
+    await db.hotels.add(hotel_data)
+    await db.commit()

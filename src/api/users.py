@@ -26,7 +26,7 @@ async def login_users(db: DBDep,data: UserLogin,
 async def post_users(db: DBDep,data: UserRegister):
     hashed_password = auth().hashed_password(data.password)
     new_user_bd = UserAdd(email= data.email, hashed_password= hashed_password, number= data.number, first_name= data.first_name, second_name= data.second_name, sex= data.sex)
-    await db.users.add(new_user_bd.model_dump())
+    await db.users.add(new_user_bd)
     await db.commit()
     return {'status': 'OK'}
 

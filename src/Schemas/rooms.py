@@ -6,11 +6,19 @@ from src.Schemas.facilities import Facility
 
 class RoomsAdd(BaseModel):
     hotel_id : int
-    title: str
-    description: str
-    price: int
-    quantity: int
+    title: str | None = None
+    description: str | None = None
+    price: int | None = None
+    quantity: int | None = None
     facilities_ids: list[int] | None = None
+
+
+class RoomsTestMain(BaseModel):
+    hotel_id: int
+    title: str | None = None
+    description: str | None = None
+    price: int | None = None
+    quantity: int | None = None
 
 class RoomsId(RoomsAdd):
     id: int

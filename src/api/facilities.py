@@ -21,7 +21,7 @@ async def get_facilities(db:DBDep):
 
 @router.post('/',summary='Добавить опцию')
 async def add_facility(db:DBDep,data:FacilityAdd):
-    await db.facilities.add(data.model_dump())
+    facility = await db.facilities.add(data)
     await db.commit()
-    return {'status':'OK'}
+    return {'data':facility}
 
