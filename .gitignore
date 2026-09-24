@@ -23,3 +23,4 @@ dist/
 *.sqlite
 *.sqlite3
 *.db
+.env-test
