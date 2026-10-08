@@ -1,42 +1,126 @@
 from datetime import date
 
+import pytest
+from sqlalchemy import select
+
 from src.Schemas.booking import BookingAdd
+from src.model.bookings import BookingORM
+from src.repositories import booking as booking_module
 
 
+class MissingFilteredBookings(Exception):
+    pass
 
-async def test_booking_crud(db,register_user):
-    user = (await db.users.get_all())[0].id
-    room = (await db.rooms.get_all())[0].id
-    booking_data = BookingAdd(
-        date_from=date(year=2026, month=8, day=10),
-        date_to=date(year=2026, month=8, day=15),
+
+@pytest.fixture
+async def stored_booking(db, register_user):
+    user = (await db.users.get_all())[0]
+    data = BookingAdd(
+        date_from=date(2027, 8, 10),
+        date_to=date(2027, 8, 15),
         price=2999,
-        user_id=user,
-        room_id=room,
+        user_id=user.id,
+        room_id=1,
     )
-    new_booking = await db.booking.add(booking_data)
-
-    b = await db.booking.get_one_or_none(id=new_booking.id)
-    assert b
-    assert b.id == new_booking.id
+    return await db.booking.add(data)
 
 
-    update_book_data = BookingAdd(
-        date_from=date(year=2026, month=8, day=10),
-        date_to=date(year=2026, month=8, day=20),
-        price=2999,
-        user_id=user,
-        room_id=room,
+async def test_booking_crud(db, stored_booking):
+    found = await db.booking.get_one_or_none(id=stored_booking.id)
+    assert found.room_id == 1
+    assert found.final_cost == 2999 * 5
+    updated = BookingAdd(
+        date_from=date(2027, 8, 10),
+        date_to=date(2027, 8, 20),
+        price=4000,
+        user_id=found.user_id,
+        room_id=1,
     )
-    await db.booking.put(update_book_data, id=new_booking.id)
-    update_book = await db.booking.get_one_or_none(id=new_booking.id)
-    assert update_book
-    assert update_book.id == new_booking.id
-    assert update_book.date_to == date(year=2026, month=8, day=20)
-
-
-    await db.booking.delete(id=new_booking.id)
-    b = await db.booking.get_one_or_none(id=new_booking.id)
-    assert not b
-
+    await db.booking.put(updated, id=found.id)
+    await db.session.refresh(found)
+    assert found.date_to == date(2027, 8, 20)
+    assert found.price == 4000
+    assert found.final_cost == 40000
+    await db.booking.delete(id=found.id)
+    assert await db.booking.get_one_or_none(id=found.id) is None
     await db.commit()
+
+
+async def test_unknown_booking_returns_none(db):
+    assert await db.booking.get_one_or_none(id=999999) is None
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AttributeError,
+    reason="BookingRepository.mapper is None; class sets schema instead",
+)
+async def test_booking_get_all_maps_rows(db, stored_booking):
+    rows = await db.booking.get_all()
+    assert [row.id for row in rows] == [stored_booking.id]
+    assert rows[0].model_dump()["price"] == 2999
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=MissingFilteredBookings,
+    reason="BaseRepository.get_filtered has no return statement",
+)
+async def test_booking_get_filtered_returns_matching_rows(db, stored_booking):
+    rows = await db.booking.get_filtered(user_id=stored_booking.user_id)
+    if rows is None:
+        raise MissingFilteredBookings("Selected rows were discarded")
+    assert isinstance(rows, list)
+    assert [row.id for row in rows] == [stored_booking.id]
+
+
+async def test_delete_missing_booking_preserves_existing(db, stored_booking):
+    await db.booking.delete(id=999999)
+    assert await db.booking.get_one_or_none(id=stored_booking.id) is not None
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AttributeError,
+    reason="BookingRepository.mapper is None for today-checkin records",
+)
+async def test_today_checkins_exclude_other_dates(db, stored_booking, monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2027, 8, 10)
+
+    monkeypatch.setattr(booking_module, "date", FixedDate)
+    await db.booking.add(
+        BookingAdd(
+            date_from=date(2027, 8, 11),
+            date_to=date(2027, 8, 12),
+            price=100,
+            user_id=stored_booking.user_id,
+            room_id=1,
+        )
+    )
+    rows = await db.booking.get_booking_today_checkin()
+    assert [row.id for row in rows] == [stored_booking.id]
+
+
+async def test_today_checkins_empty(db, monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2027, 8, 10)
+
+    monkeypatch.setattr(booking_module, "date", FixedDate)
+    assert await db.booking.get_booking_today_checkin() == []
+
+
+async def test_booking_commit_visible_to_another_session(
+    db, stored_booking, test_session_factory
+):
+    await db.commit()
+    async with test_session_factory() as session:
+        row = await session.scalar(
+            select(BookingORM).where(BookingORM.id == stored_booking.id)
+        )
+        assert row is not None
+        assert row.price == 2999
