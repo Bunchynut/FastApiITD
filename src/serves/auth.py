@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta, timezone
 import jwt
-from aiohttp.abc import HTTPException
+from fastapi import HTTPException
 from passlib.context import CryptContext
 from src.config import settings
 
-class auth():
+class AuthService:
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated='auto')
 
     def verify_password(self,plain_password, hashed_password):
@@ -12,7 +12,7 @@ class auth():
 
 
     def create_access_token(self,data: dict) -> str:
-        to_encode = data.copy()
+        to_encode = {"user_id": data.get("user_id")}
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
@@ -25,6 +25,11 @@ class auth():
 
     def decode_token(self, token: str) -> dict:
         try:
-            return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        except jwt.exceptions.DecodeError:
-            raise HTTPException(status_code=401,detail='Неверный токен')
+            return jwt.decode(
+                token,
+                settings.JWT_SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+                options={"require": ["exp", "user_id"]},
+            )
+        except (jwt.PyJWTError, TypeError, ValueError):
+            raise HTTPException(status_code=401, detail="Неверный токен")

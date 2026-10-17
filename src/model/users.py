@@ -7,6 +7,10 @@ class SexEnum(str, Enum):
     male = 'male'
     female = 'female'
 
+class UserRole(str, Enum):
+    user = 'user'
+    admin = 'admin'
+
 class UsersOrm(Base):
 
     __tablename__ = "users"
@@ -19,3 +23,13 @@ class UsersOrm(Base):
     first_name: Mapped[str] = mapped_column(String(length=20))
     second_name: Mapped[str] = mapped_column(String(length=20))
     sex: Mapped[SexEnum] = mapped_column(String(length=10))
+    role: Mapped[UserRole] = mapped_column(
+        sqlalchemyEnum(
+            UserRole,
+            name='user_role',
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=UserRole.user,
+        server_default=UserRole.user.value,
+    )

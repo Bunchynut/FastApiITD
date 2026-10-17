@@ -8,8 +8,13 @@ class HotelPost(BaseModel):
 
 class Hotel(HotelPost):
     id: int
-    model_config = ConfigDict(from_attributes=True)
 
 class HotelPatch(BaseModel):
     title: str | None = Field(None),
+    location: str | None = Field(None)
+
+
+class GetHotel(BaseModel):
+    id: int
+    title: str | None = Field(None)
     location: str | None = Field(None)
