@@ -12,6 +12,7 @@ class UserRegister(BaseModel):
     first_name: str
     second_name: str
     sex: SexEnum
+    model_config = ConfigDict(extra="forbid")
 
 
 class UserAdd(BaseModel):
@@ -38,7 +39,7 @@ class UserLogin(BaseModel):
     password:str
 
 
-class UserId_With_Hashed(UserId):
+class UserWithPasswordHash(UserId):
     hashed_password: str
 
 

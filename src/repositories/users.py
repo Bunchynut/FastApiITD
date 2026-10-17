@@ -1,7 +1,7 @@
 from pydantic import EmailStr
 from sqlalchemy import select, insert
 
-from src.Schemas.users import UserId, UserId_With_Hashed
+from src.Schemas.users import UserId, UserWithPasswordHash
 from src.model.users import UsersOrm
 from src.repositories.base import BaseRepository
 from src.repositories.mappers.mapper import UserDataMapper
@@ -19,4 +19,4 @@ class UsersRepository(BaseRepository):
         res = result.scalars().one_or_none()
         if not res:
             return None
-        return UserId_With_Hashed.model_validate(res)
+        return UserWithPasswordHash.model_validate(res)

@@ -1,9 +1,9 @@
 from datetime import date
 
-from fastapi import Query, Path, Body, APIRouter
+from fastapi import Query, Path, Body, APIRouter, Depends
 
 from src.Schemas.Schemas import HotelPost, HotelPatch
-from src.api.Dependencied import paginationDep, DBDep
+from src.api.dependencies import PaginationDep, DatabaseDep, require_admin
 
 
 from fastapi_cache.decorator import cache
@@ -15,8 +15,8 @@ router = APIRouter(prefix='/hotels', tags=['Отели'])
 @router.get('', summary='Получить данные')
 @cache(expire=10)
 async def get_hotels(
-            pagination: paginationDep,
-            db: DBDep,
+            pagination: PaginationDep,
+            db: DatabaseDep,
             date_from: date = Query(examples="2026-08-01"),
             date_to: date = Query(examples="2026-08-10"),
             title: str | None = Query(None,description='Название города') ,
@@ -36,15 +36,15 @@ async def get_hotels(
 
 
 
-@router.delete('/{hotel_id}', summary='Удалить обьект')
-async def delete_hotel(db: DBDep,hotel_id:int = Path(description='Удалить по айди')):
+@router.delete('/{hotel_id}', summary='Удалить обьект', dependencies=[Depends(require_admin)])
+async def delete_hotel(db: DatabaseDep,hotel_id:int = Path(description='Удалить по айди')):
         await db.hotels.delete(id=hotel_id)
         await db.commit()
         return {'status': 'OK'}
 
 
-@router.post('', summary='Добавaить обьект')
-async def create_hotel(db: DBDep,hotel_data:HotelPost = Body(openapi_examples={
+@router.post('', summary='Добавaить обьект', dependencies=[Depends(require_admin)])
+async def create_hotel(db: DatabaseDep,hotel_data:HotelPost = Body(openapi_examples={
     "1": {
         "summary": "Сочи",
         "value": {
@@ -66,14 +66,14 @@ async def create_hotel(db: DBDep,hotel_data:HotelPost = Body(openapi_examples={
         return {'status': 'OK','data': hotel_data.model_dump()}
 
 
-@router.put('/{hotel_id}',description='Полностью поменять обьект',summary='Полностью поменять обьект')
-async def put_hotel(db: DBDep,hotel_data:HotelPost,hotel_id:int = Path(description='Поменять')):
+@router.put('/{hotel_id}',description='Полностью поменять обьект',summary='Полностью поменять обьект', dependencies=[Depends(require_admin)])
+async def put_hotel(db: DatabaseDep,hotel_data:HotelPost,hotel_id:int = Path(description='Поменять')):
         await db.hotels.put(id=hotel_id,data=hotel_data.model_dump())
         await db.commit()
         return {'status': 'OK'}
 
-@router.patch('/{hotel_id}',description='Частично поменять обьект',summary='Частично поменять обьект')
-async def patch_hotel(db: DBDep,hotel_data:HotelPatch,
+@router.patch('/{hotel_id}',description='Частично поменять обьект',summary='Частично поменять обьект', dependencies=[Depends(require_admin)])
+async def patch_hotel(db: DatabaseDep,hotel_data:HotelPatch,
                 hotel_id:int = Path(description='Поменять')):
         await db.hotels.put(id=hotel_id,exclude_unset= True, data=hotel_data)
         await db.hotels.commit()
