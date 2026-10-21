@@ -8,7 +8,7 @@ from sqlalchemy.orm import joinedload
 from src.repositories.base import BaseRepository
 from src.model.rooms import RoomsOrm
 from src.repositories.mappers.mapper import RoomDataMapper
-from src.repositories.utils import rooms_ids_from_booking
+from src.repositories.utils import available_room_ids_for_dates
 
 
 class RoomsRepositories(BaseRepository):
@@ -20,9 +20,13 @@ class RoomsRepositories(BaseRepository):
             date_from: date,
             date_to: date,
     ):
-        rooms_ids_to_get = rooms_ids_from_booking(date_from=date_from, date_to=date_to, hotel_id=hotel_id)
+        available_room_ids_query = available_room_ids_for_dates(
+            date_from=date_from, date_to=date_to, hotel_id=hotel_id
+        )
 
-        query = select(self.model).options(joinedload(self.model.facilities)).filter(RoomsOrm.id.in_(rooms_ids_to_get))
+        query = select(self.model).options(joinedload(self.model.facilities)).filter(
+            RoomsOrm.id.in_(available_room_ids_query)
+        )
         result = await self.session.execute(query)
         return [RoomWithFacilities.model_validate(model,from_attributes=True) for model in result.unique().scalars().all()]
 

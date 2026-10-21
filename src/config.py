@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -29,7 +30,14 @@ class Settings(BaseSettings):
 
     @property
     def DB_URL(self):
-        return f'postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}'
+        return URL.create(
+            "postgresql+asyncpg",
+            username=self.DB_USER,
+            password=self.DB_PASS,
+            host=self.DB_HOST,
+            port=self.DB_PORT,
+            database=self.DB_NAME,
+        )
     model_config = SettingsConfigDict(env_file=ENV_PATH,env_file_encoding="utf-8")
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str

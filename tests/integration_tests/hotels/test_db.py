@@ -7,14 +7,6 @@ from src.Schemas.Schemas import HotelPatch, HotelPost
 from src.Schemas.rooms import RoomsPatchSchema
 
 
-class MissingFilteredHotels(Exception):
-    pass
-
-
-class MissingPaginationOrder(Exception):
-    pass
-
-
 async def test_hotel_repository_crud(db):
     data = HotelPost(title="Repository hotel", location="New York")
     created = await db.hotels.add(data)
@@ -92,11 +84,6 @@ async def test_hotel_repository_availability_filters(db, filters, expected_ids):
     assert {hotel.id for hotel in hotels} == expected_ids
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=MissingPaginationOrder,
-    reason="Hotel pagination uses LIMIT/OFFSET without ORDER BY, allowing duplicate or skipped hotels.",
-)
 async def test_hotel_repository_pagination_has_stable_order(db):
     statements = []
     connection = db.session.bind.sync_connection
@@ -122,12 +109,9 @@ async def test_hotel_repository_pagination_has_stable_order(db):
     finally:
         event.remove(connection, "before_cursor_execute", capture_sql)
     assert len(statements) == 4
-    if not all("ORDER BY" in statement for statement in statements):
-        raise MissingPaginationOrder(
-            "The four executed page queries contain no stable ordering"
-        )
+    assert all("ORDER BY" in statement for statement in statements)
     assert [len(page) for page in pages] == [1, 1, 1, 0]
-    assert {hotel.id for page in pages for hotel in page} == {1, 2, 3}
+    assert [hotel.id for page in pages for hotel in page] == [1, 2, 3]
 
 
 async def test_hotel_repository_excludes_zero_quantity_rooms(db):
@@ -145,14 +129,6 @@ async def test_hotel_repository_excludes_zero_quantity_rooms(db):
     assert {hotel.id for hotel in hotels} == {1, 3}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=MissingFilteredHotels,
-    reason="BaseRepository.get_filtered executes its query but never returns the selected models.",
-)
 async def test_hotel_repository_get_filtered_returns_matching_rows(db):
     hotels = await db.hotels.get_filtered(id=2)
-    if hotels is None:
-        raise MissingFilteredHotels("Selected rows were discarded")
-    assert hotels is not None
     assert [hotel.id for hotel in hotels] == [2]

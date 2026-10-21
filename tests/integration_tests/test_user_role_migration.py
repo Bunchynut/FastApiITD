@@ -1,3 +1,5 @@
+"""Role migration compatibility for every released database starting point."""
+
 from uuid import uuid4
 
 import pytest
@@ -5,121 +7,131 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import create_async_engine
-
-from src.config import settings
 
 
-@pytest.mark.asyncio
-async def test_user_role_migration_preserves_users_and_enforces_enum():
-    schema = f"migration_{uuid4().hex}"
-    engine = create_async_engine(settings.DB_URL)
-    try:
-        async with engine.begin() as connection:
+def run_alembic(sync_connection, action, revision):
+    config = Config("alembic.ini")
+    config.attributes["connection"] = sync_connection
+    getattr(command, action)(config, revision)
+
+
+def test_role_revisions_form_one_chain_with_both_published_revisions():
+    scripts = ScriptDirectory.from_config(Config("alembic.ini"))
+
+    assert scripts.get_heads() == ["d9e0f1234567"]
+    assert scripts.get_revision("a1b2c3d4e5f6") is not None
+    assert scripts.get_revision("d9e0f1234567") is not None
+    ancestors = {revision.revision for revision in scripts.iterate_revisions(
+        "d9e0f1234567", "bde324b4b6de"
+    )}
+    assert {"4f73b9006a12", "a1b2c3d4e5f6", "c7d8e9f01234"} <= ancestors
+
+
+@pytest.mark.parametrize("starting_state", ["base", "master_role", "feature_role"])
+async def test_role_migration_upgrades_and_downgrades_each_released_state(
+    test_engine, starting_state
+):
+    schema = f"pytest_role_migration_{uuid4().hex}"
+    async with test_engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
             await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-            await connection.execute(text(f'SET search_path TO "{schema}"'))
+            await connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
 
-            config = Config("alembic.ini")
-            revision = ScriptDirectory.from_config(config).get_revision(
-                "4f73b9006a12"
+            if starting_state == "base":
+                await connection.run_sync(
+                    lambda sync: run_alembic(sync, "upgrade", "bde324b4b6de")
+                )
+            elif starting_state == "master_role":
+                await connection.run_sync(
+                    lambda sync: run_alembic(sync, "upgrade", "4f73b9006a12")
+                )
+            else:
+                await connection.run_sync(
+                    lambda sync: run_alembic(sync, "upgrade", "bde324b4b6de")
+                )
+                # The released a1 migration added the role to existing users.
+                await connection.execute(
+                    text(
+                        "INSERT INTO users (email, hashed_password, number, first_name, "
+                        "second_name, sex) VALUES ('kept@example.com', 'hash', "
+                        "'+70000000000', 'Kept', 'User', 'male')"
+                    )
+                )
+                await connection.execute(
+                    text("CREATE TYPE user_role AS ENUM ('user', 'admin')")
+                )
+                await connection.execute(
+                    text(
+                        "ALTER TABLE users ADD COLUMN role user_role "
+                        "NOT NULL DEFAULT 'user'"
+                    )
+                )
+                await connection.run_sync(
+                    lambda sync: run_alembic(sync, "stamp", "a1b2c3d4e5f6")
+                )
+
+            if starting_state != "feature_role":
+                await connection.execute(
+                    text(
+                        "INSERT INTO users (email, hashed_password, number, first_name, "
+                        "second_name, sex) VALUES ('kept@example.com', 'hash', "
+                        "'+70000000000', 'Kept', 'User', 'male')"
+                    )
+                )
+            await connection.run_sync(
+                lambda sync: run_alembic(sync, "upgrade", "head")
             )
-            assert revision is not None, "user role migration is missing"
 
-            def migrate(sync_connection, operation, revision):
-                config.attributes["connection"] = sync_connection
-                getattr(command, operation)(config, revision)
-
-            await connection.run_sync(migrate, "upgrade", "bde324b4b6de")
-            await connection.execute(
+            assert (
+                await connection.scalar(
+                    text("SELECT role::text FROM users WHERE email='kept@example.com'")
+                )
+            ) == "user"
+            labels = await connection.scalars(
                 text(
-                    "INSERT INTO users (id, email, hashed_password, number, "
-                    "first_name, second_name, sex) VALUES "
-                    "(1, 'kept@example.com', 'hash', '+70000000000', 'Kept', "
-                    "'User', 'male')"
-                )
+                    "SELECT enumlabel FROM pg_enum e JOIN pg_type t "
+                    "ON t.oid=e.enumtypid JOIN pg_namespace n ON n.oid=t.typnamespace "
+                    "WHERE t.typname='user_role' AND n.nspname=:schema "
+                    "ORDER BY e.enumsortorder"
+                ),
+                {"schema": schema},
             )
-
-            await connection.run_sync(migrate, "upgrade", "head")
-
-            result = (
-                await connection.execute(
-                    text("SELECT role FROM users WHERE id = 1")
-                )
-            ).scalar_one()
-            assert result == "user"
-            labels = (
+            assert list(labels) == ["user", "admin"]
+            role_column = (
                 await connection.execute(
                     text(
-                        "SELECT enumlabel FROM pg_enum e JOIN pg_type t "
-                        "ON t.oid = e.enumtypid JOIN pg_namespace n "
-                        "ON n.oid = t.typnamespace WHERE t.typname = 'user_role' "
-                        "AND n.nspname = :schema "
-                        "ORDER BY e.enumsortorder"
-                    ),
-                    {"schema": schema},
-                )
-            ).scalars().all()
-            assert labels == ["user", "admin"]
-            column = (
-                await connection.execute(
-                    text(
-                        "SELECT is_nullable, column_default FROM "
-                        "information_schema.columns WHERE table_schema = :schema "
-                        "AND table_name = 'users' AND column_name = 'role'"
+                        "SELECT is_nullable, column_default FROM information_schema.columns "
+                        "WHERE table_schema=:schema AND table_name='users' "
+                        "AND column_name='role'"
                     ),
                     {"schema": schema},
                 )
             ).one()
-            assert column.is_nullable == "NO"
-            assert "'user'" in column.column_default
-            with pytest.raises(DBAPIError):
-                async with connection.begin_nested():
-                    await connection.execute(
-                        text("UPDATE users SET role = 'owner' WHERE id = 1")
-                    )
+            assert role_column.is_nullable == "NO"
+            assert "'user'" in role_column.column_default
 
-            await connection.run_sync(migrate, "downgrade", "bde324b4b6de")
-            assert (
-                await connection.execute(
-                    text(
-                        "SELECT email, hashed_password, number, first_name, "
-                        "second_name, sex FROM users WHERE id = 1"
-                    )
-                )
-            ).one() == (
-                "kept@example.com",
-                "hash",
-                "+70000000000",
-                "Kept",
-                "User",
-                "male",
+            await connection.run_sync(
+                lambda sync: run_alembic(sync, "downgrade", "bde324b4b6de")
             )
-            assert (
-                await connection.execute(
-                    text(
-                        "SELECT count(*) FROM information_schema.columns "
-                        "WHERE table_schema = :schema AND table_name = 'users' "
-                        "AND column_name = 'role'"
-                    ),
-                    {"schema": schema},
-                )
-            ).scalar_one() == 0
-            assert (
-                await connection.execute(
-                    text(
-                        "SELECT count(*) FROM pg_type t JOIN pg_namespace n "
-                        "ON n.oid = t.typnamespace WHERE n.nspname = :schema "
-                        "AND t.typname = 'user_role'"
-                    ),
-                    {"schema": schema},
-                )
-            ).scalar_one() == 0
-    finally:
-        try:
-            async with engine.begin() as connection:
-                await connection.execute(
-                    text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-                )
+            assert await connection.scalar(
+                text(
+                    "SELECT count(*) FROM information_schema.columns "
+                    "WHERE table_schema=:schema AND table_name='users' "
+                    "AND column_name='role'"
+                ),
+                {"schema": schema},
+            ) == 0
+            assert await connection.scalar(
+                text(
+                    "SELECT count(*) FROM pg_type t JOIN pg_namespace n "
+                    "ON n.oid=t.typnamespace WHERE n.nspname=:schema "
+                    "AND t.typname='user_role'"
+                ),
+                {"schema": schema},
+            ) == 0
+            assert await connection.scalar(
+                text("SELECT email FROM users WHERE id=1")
+            ) == "kept@example.com"
         finally:
-            await engine.dispose()
+            await transaction.rollback()

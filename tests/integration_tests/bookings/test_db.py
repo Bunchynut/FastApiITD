@@ -8,10 +8,6 @@ from src.model.bookings import BookingORM
 from src.repositories import booking as booking_module
 
 
-class MissingFilteredBookings(Exception):
-    pass
-
-
 @pytest.fixture
 async def stored_booking(db, register_user):
     user = (await db.users.get_all())[0]
@@ -50,26 +46,14 @@ async def test_unknown_booking_returns_none(db):
     assert await db.booking.get_one_or_none(id=999999) is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AttributeError,
-    reason="BookingRepository.mapper is None; class sets schema instead",
-)
 async def test_booking_get_all_maps_rows(db, stored_booking):
     rows = await db.booking.get_all()
     assert [row.id for row in rows] == [stored_booking.id]
     assert rows[0].model_dump()["price"] == 2999
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=MissingFilteredBookings,
-    reason="BaseRepository.get_filtered has no return statement",
-)
 async def test_booking_get_filtered_returns_matching_rows(db, stored_booking):
     rows = await db.booking.get_filtered(user_id=stored_booking.user_id)
-    if rows is None:
-        raise MissingFilteredBookings("Selected rows were discarded")
     assert isinstance(rows, list)
     assert [row.id for row in rows] == [stored_booking.id]
 
@@ -79,11 +63,6 @@ async def test_delete_missing_booking_preserves_existing(db, stored_booking):
     assert await db.booking.get_one_or_none(id=stored_booking.id) is not None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AttributeError,
-    reason="BookingRepository.mapper is None for today-checkin records",
-)
 async def test_today_checkins_exclude_other_dates(db, stored_booking, monkeypatch):
     class FixedDate(date):
         @classmethod

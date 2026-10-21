@@ -3,6 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Enum as sqlalchemyEnum
 from enum import Enum
 
+
 class SexEnum(str, Enum):
     male = 'male'
     female = 'female'
@@ -26,8 +27,8 @@ class UsersOrm(Base):
     role: Mapped[UserRole] = mapped_column(
         sqlalchemyEnum(
             UserRole,
-            name='user_role',
-            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+            name="user_role",
+            values_callable=lambda roles: [role.value for role in roles],
         ),
         nullable=False,
         default=UserRole.user,

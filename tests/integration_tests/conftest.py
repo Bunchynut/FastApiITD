@@ -1,3 +1,5 @@
+"""Real PostgreSQL tests in an owned schema, rolled back after every test."""
+
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -7,7 +9,7 @@ import pytest_asyncio
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import NullPool, text
+from sqlalchemy import NullPool, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.DataBase import Base
@@ -17,6 +19,7 @@ from src.Schemas.rooms import RoomsTestMain
 from src.api.dependencies import get_db
 from src.config import settings
 from src.model import *  # noqa: F403 -- register every table in metadata
+from src.model.users import UserRole, UsersOrm
 from src.utils.db_manager import DBManager
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 async def test_engine():
     if settings.MODE != "TEST":
         pytest.fail("Integration tests require MODE=TEST; refusing database access.")
+    # Only this unpredictable, owned schema is created and removed.
     schema = f"pytest_{uuid4().hex}"
     engine = create_async_engine(
         settings.DB_URL,
@@ -64,6 +68,7 @@ async def test_session_factory(test_engine):
                 rooms = json.loads(
                     (PROJECT_ROOT / "tests/mock_rooms.json").read_text(encoding="utf-8")
                 )
+                # Seed room data references hotel IDs; sequences survive rollback.
                 await connection.execute(
                     text("ALTER SEQUENCE hotels_id_seq RESTART WITH 1")
                 )
@@ -99,6 +104,7 @@ async def ac(test_session_factory):
     FastAPICache.reset()
     FastAPICache.init(InMemoryBackend(), prefix=f"test-{uuid4().hex}")
     try:
+        # HTTP exercises real routes without starting Redis/Celery lifespan.
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -128,11 +134,11 @@ async def auth_ac(ac, register_user, user_data):
 
 
 @pytest.fixture
-async def admin_ac(auth_ac, test_session_factory, user_data):
-    async with test_session_factory() as session:
-        await session.execute(
-            text("UPDATE users SET role = 'admin' WHERE email = :email"),
-            {"email": user_data["email"]},
-        )
-        await session.commit()
+async def admin_ac(auth_ac, db, user_data):
+    await db.session.execute(
+        update(UsersOrm)
+        .where(UsersOrm.email == user_data["email"])
+        .values(role=UserRole.admin)
+    )
+    await db.commit()
     return auth_ac

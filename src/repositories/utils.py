@@ -1,54 +1,70 @@
 from datetime import date
 
-from sqlalchemy import select, func
+from sqlalchemy import and_, func, select
 
 from src.model.bookings import BookingORM
 from src.model.rooms import RoomsOrm
 
 
-def rooms_ids_from_booking(
+def available_room_ids_for_dates(
     date_from: date,
     date_to: date,
     hotel_id: int | None = None
     ):
 
-    rooms_count = (
-    select(BookingORM.room_id, func.count("*").label("rooms_booked"))
-    .select_from(BookingORM)
-    .filter(
-        BookingORM.date_from <= date_to,
-        BookingORM.date_to >= date_from,
+    overlapping_stays = (
+        select(
+            BookingORM.room_id,
+            func.greatest(BookingORM.date_from, date_from).label("occupancy_start"),
+        )
+        .where(BookingORM.date_from < date_to, BookingORM.date_to > date_from)
+        .cte("overlapping_stays")
     )
-    .group_by(BookingORM.room_id)
-    .cte(name="rooms_count")
+    occupancy_at_starts = (
+        select(
+            overlapping_stays.c.room_id,
+            overlapping_stays.c.occupancy_start,
+            func.count(func.distinct(BookingORM.id)).label("rooms_booked"),
+        )
+        .join(
+            BookingORM,
+            and_(
+                BookingORM.room_id == overlapping_stays.c.room_id,
+                BookingORM.date_from <= overlapping_stays.c.occupancy_start,
+                BookingORM.date_to > overlapping_stays.c.occupancy_start,
+            ),
+        )
+        .group_by(overlapping_stays.c.room_id, overlapping_stays.c.occupancy_start)
+        .cte("occupancy_at_starts")
+    )
+    peak_occupancy = (
+        select(
+            occupancy_at_starts.c.room_id,
+            func.max(occupancy_at_starts.c.rooms_booked).label("rooms_booked"),
+        )
+        .group_by(occupancy_at_starts.c.room_id)
+        .cte("peak_occupancy")
     )
 
-    rooms_left_table = (
-    select(
-        RoomsOrm.id.label("room_id"),
-        (RoomsOrm.quantity - func.coalesce(rooms_count.c.rooms_booked, 0)).label("rooms_left"),
-    )
-    .select_from(RoomsOrm)
-    .outerjoin(rooms_count, RoomsOrm.id == rooms_count.c.room_id)
-    .cte(name="rooms_left_table")
+    room_availability = (
+        select(
+            RoomsOrm.id.label("room_id"),
+            (RoomsOrm.quantity - func.coalesce(peak_occupancy.c.rooms_booked, 0)).label(
+                "rooms_left"
+            ),
+        )
+        .select_from(RoomsOrm)
+        .outerjoin(peak_occupancy, RoomsOrm.id == peak_occupancy.c.room_id)
+        .cte("room_availability")
     )
 
-    rooms_ids_for_hotel = (
-    select(RoomsOrm.id)
-    .select_from(RoomsOrm))
+    hotel_room_ids = select(RoomsOrm.id)
     if hotel_id is not None:
-        rooms_ids_for_hotel = rooms_ids_for_hotel.filter_by(hotel_id=hotel_id)
-    rooms_ids_for_hotel = (rooms_ids_for_hotel
-    .subquery(name="rooms_ids_for_hotel")
+        hotel_room_ids = hotel_room_ids.filter_by(hotel_id=hotel_id)
+    return (
+        select(room_availability.c.room_id)
+        .where(
+            room_availability.c.rooms_left > 0,
+            room_availability.c.room_id.in_(hotel_room_ids),
+        )
     )
-
-    rooms_ids_to_get = (
-    select(rooms_left_table.c.room_id)
-    .select_from(rooms_left_table)
-    .filter(
-        rooms_left_table.c.rooms_left > 0,
-        rooms_left_table.c.room_id.in_(rooms_ids_for_hotel),
-    )
-    )
-
-    return rooms_ids_to_get

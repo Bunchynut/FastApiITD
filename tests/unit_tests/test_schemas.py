@@ -11,7 +11,7 @@ from src.Schemas.users import (
     UserLogin,
     UserRegister,
 )
-from src.model.users import SexEnum, UsersOrm
+from src.model.users import SexEnum, UserRole, UsersOrm
 
 
 @pytest.fixture
@@ -102,11 +102,6 @@ def test_persisted_user_rejects_invalid_phone(user_data, number):
     assert error.value.errors()[0]["loc"] == ("number",)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=pytest.fail.Exception,
-    reason="UserRegister does not apply the phone validation required by UserAdd",
-)
 def test_registration_rejects_invalid_phone_at_request_boundary(user_data):
     with pytest.raises(ValidationError):
         UserRegister.model_validate({**user_data, "number": "invalid-phone"})
@@ -121,6 +116,7 @@ def test_public_user_maps_orm_without_exposing_password():
         second_name="Ivanova",
         sex=SexEnum.female,
         hashed_password="stored-hash",
+        role=UserRole.user,
     )
     public = UserId.model_validate(orm_user).model_dump(mode="json")
     assert public == {
@@ -155,3 +151,17 @@ def test_room_update_facility_defaults_are_independent():
     second = PutRoomsPutSchema.model_validate(data)
     first.facilities_ids.append(1)
     assert second.facilities_ids == []
+
+
+def test_empty_hotel_patch_has_no_field_defaults():
+    patch = HotelPatch()
+    assert patch.title is None
+    assert patch.location is None
+    assert patch.model_dump(exclude_unset=True) == {}
+
+
+def test_hotel_patch_openapi_does_not_publish_tuple_default():
+    from src.FastApiOb import app
+
+    schema = app.openapi()["components"]["schemas"]["HotelPatch"]
+    assert schema["properties"]["title"].get("default") is None

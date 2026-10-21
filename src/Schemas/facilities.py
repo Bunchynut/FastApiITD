@@ -1,19 +1,20 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from src.Schemas.types import PostgresId, StoredText
 
 
 class FacilityAdd(BaseModel):
-    title: str
+    title: StoredText = Field(max_length=100)
 
 
 class Facility(FacilityAdd):
-    id: int
+    id: PostgresId
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class RoomsFacilityAdd(BaseModel):
-    room_id: int
-    facility_id: int
+    room_id: PostgresId
+    facility_id: PostgresId
 
 
 class RoomsFacility(RoomsFacilityAdd):

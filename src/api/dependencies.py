@@ -1,34 +1,34 @@
 from typing import Annotated
 
-from fastapi import Depends, Query, HTTPException, Request
-from src.model.users import UsersOrm
+from fastapi import Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from src.DataBase import async_session_maker
+from src.model.users import UsersOrm
 from src.serves.auth import AuthService
 from src.utils.db_manager import DBManager
 
 
 class PaginationParams(BaseModel):
-    page: Annotated[int | None,Query(1,ge=1)]
-    per_page: Annotated[int | None,Query(None,ge=1,le=30)]
+    page: Annotated[int, Query(1, ge=1)]
+    per_page: Annotated[int | None, Query(None, ge=1, le=30)]
 
-PaginationDep = Annotated[PaginationParams,Depends()]
+
+PaginationDep = Annotated[PaginationParams, Depends()]
 
 
 def get_token(request: Request) -> str:
-    token = request.cookies.get('access_token', None)
+    token = request.cookies.get("access_token")
     if not token:
-        raise HTTPException(status_code=401,detail='Вы не предоставили токен доступа')
+        raise HTTPException(status_code=401, detail="Вы не предоставили токен доступа")
     return token
 
 
-async def get_current_user(db: "DatabaseDep", token: str = Depends(get_token)) -> UsersOrm:
+async def get_current_user(
+    db: "DatabaseDep", token: str = Depends(get_token)
+) -> UsersOrm:
     data = AuthService().decode_token(token)
-    user_id = data.get("user_id")
-    if type(user_id) is not int or user_id <= 0:
-        raise HTTPException(status_code=401, detail="Неверный токен")
-    user = await db.users.get_one_or_none(id=user_id)
+    user = await db.users.get_one_or_none(id=data["user_id"])
     if user is None:
         raise HTTPException(status_code=401, detail="Пользователь не найден")
     return user
@@ -50,7 +50,7 @@ async def require_admin(current_user: CurrentUserDep) -> UsersOrm:
     return current_user
 
 
-def get_db_manager():
+def get_db_manager() -> DBManager:
     return DBManager(session_factory=async_session_maker)
 
 
@@ -59,4 +59,4 @@ async def get_db():
         yield db
 
 
-DatabaseDep = Annotated[DBManager,Depends(get_db)]
+DatabaseDep = Annotated[DBManager, Depends(get_db)]

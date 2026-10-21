@@ -4,11 +4,7 @@ import pytest
 
 from src.Schemas.booking import BookingAdd
 from src.Schemas.rooms import RoomsPatchSchema
-from src.repositories.utils import rooms_ids_from_booking
-
-
-class DisjointStaysCountedTogether(AssertionError):
-    pass
+from src.repositories.utils import available_room_ids_for_dates
 
 
 @pytest.fixture
@@ -41,7 +37,7 @@ async def single_room(db, register_user):
 )
 async def test_room_availability_overlap_matrix(db, single_room, start, end, available):
     result = await db.session.execute(
-        rooms_ids_from_booking(
+        available_room_ids_for_dates(
             date.fromisoformat(start), date.fromisoformat(end), hotel_id=1
         )
     )
@@ -51,17 +47,12 @@ async def test_room_availability_overlap_matrix(db, single_room, start, end, ava
     assert not ({3, 4} & set(ids))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Availability uses inclusive date comparisons and counts adjacent stays as overlapping",
-)
 @pytest.mark.parametrize(
     "start,end", [("2027-08-01", "2027-08-10"), ("2027-08-15", "2027-08-20")]
 )
 async def test_adjacent_stays_do_not_overlap(db, single_room, start, end):
     result = await db.session.execute(
-        rooms_ids_from_booking(
+        available_room_ids_for_dates(
             date.fromisoformat(start), date.fromisoformat(end), hotel_id=1
         )
     )
@@ -70,14 +61,16 @@ async def test_adjacent_stays_do_not_overlap(db, single_room, start, end):
 
 async def test_availability_without_hotel_filter(db):
     result = await db.session.execute(
-        rooms_ids_from_booking(date(2027, 8, 10), date(2027, 8, 15))
+        available_room_ids_for_dates(date(2027, 8, 10), date(2027, 8, 15))
     )
     assert set(result.scalars().all()) == {1, 2, 3, 4}
 
 
 async def test_availability_unknown_hotel_empty(db):
     result = await db.session.execute(
-        rooms_ids_from_booking(date(2027, 8, 10), date(2027, 8, 15), hotel_id=999999)
+        available_room_ids_for_dates(
+            date(2027, 8, 10), date(2027, 8, 15), hotel_id=999999
+        )
     )
     assert result.scalars().all() == []
 
@@ -96,7 +89,7 @@ async def test_available_room_can_be_booked_up_to_quantity(db, register_user):
     second = await db.booking.add_booking(data, hotel_id=1)
     assert first.id != second.id
     result = await db.session.execute(
-        rooms_ids_from_booking(data.date_from, data.date_to, hotel_id=1)
+        available_room_ids_for_dates(data.date_from, data.date_to, hotel_id=1)
     )
     assert 1 not in result.scalars().all()
 
@@ -115,11 +108,6 @@ async def test_room_list_and_hotel_search_exclude_sold_out_rooms(ac, db, single_
     assert {hotel["id"] for hotel in hotels.json()} == {2, 3}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=DisjointStaysCountedTogether,
-    reason="Availability sums disjoint stays instead of peak simultaneous occupancy",
-)
 async def test_availability_keeps_capacity_between_disjoint_stays(db, register_user):
     user = (await db.users.get_all())[0]
     await db.rooms.put(RoomsPatchSchema(quantity=2), exclude_unset=True, id=1)
@@ -135,11 +123,47 @@ async def test_availability_keeps_capacity_between_disjoint_stays(db, register_u
         )
 
     result = await db.session.execute(
-        rooms_ids_from_booking(date(2027, 8, 2), date(2027, 8, 8), hotel_id=1)
+        available_room_ids_for_dates(date(2027, 8, 2), date(2027, 8, 8), hotel_id=1)
     )
     room_ids = set(result.scalars().all())
     assert room_ids - {1} == {2}
-    if 1 not in room_ids:
-        raise DisjointStaysCountedTogether(
-            "Two rooms have one existing guest at a time, so one room remains available"
+    assert 1 in room_ids
+
+
+@pytest.mark.parametrize(
+    "stays",
+    [
+        [(10, 15), (10, 15)],
+        [(9, 15), (10, 14)],
+    ],
+)
+async def test_repeated_occupancy_start_counts_each_booking_once(db, register_user, stays):
+    user = (await db.users.get_all())[0]
+    await db.rooms.put(RoomsPatchSchema(quantity=3), exclude_unset=True, id=1)
+    for start, end in stays:
+        await db.booking.add(
+            BookingAdd(
+                room_id=1,
+                user_id=user.id,
+                price=24500,
+                date_from=date(2027, 8, start),
+                date_to=date(2027, 8, end),
+            )
         )
+
+    requested_start, requested_end = date(2027, 8, 10), date(2027, 8, 12)
+    result = await db.session.execute(
+        available_room_ids_for_dates(requested_start, requested_end, hotel_id=1)
+    )
+    assert 1 in result.scalars().all()
+    third = await db.booking.add_booking(
+        BookingAdd(
+            room_id=1,
+            user_id=user.id,
+            price=24500,
+            date_from=requested_start,
+            date_to=requested_end,
+        ),
+        hotel_id=1,
+    )
+    assert third.id is not None

@@ -12,7 +12,11 @@ from src.model import *
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", f"{settings.DB_URL}?async_fallback=True")
+database_url = settings.DB_URL.update_query_dict({"async_fallback": "True"})
+config.set_main_option(
+    "sqlalchemy.url",
+    database_url.render_as_string(hide_password=False).replace("%", "%%"),
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

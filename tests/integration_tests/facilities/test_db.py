@@ -55,6 +55,28 @@ async def test_room_facilities_bulk_insert(db):
     assert set(result.all()) == {(1, facility_id), (2, facility_id)}
 
 
+async def test_room_facility_mapped_reads_return_schemas_and_empty_missing_filter(db):
+    facility = await db.facilities.add(FacilityAdd(title="Wi-Fi"))
+    facility_id = facility.id
+    await db.rooms_facilities.add_bulk(
+        [
+            RoomsFacilityAdd(room_id=1, facility_id=facility_id),
+            RoomsFacilityAdd(room_id=2, facility_id=facility_id),
+        ]
+    )
+    await db.commit()
+
+    all_links = await db.rooms_facilities.get_all()
+    first_room = await db.rooms_facilities.get_filtered(room_id=1)
+    missing = await db.rooms_facilities.get_filtered(room_id=999999)
+
+    assert {(link.room_id, link.facility_id) for link in all_links} == {
+        (1, facility_id), (2, facility_id)
+    }
+    assert [(link.room_id, link.facility_id) for link in first_room] == [(1, facility_id)]
+    assert missing == []
+
+
 async def test_room_facilities_replace_deduplicates_and_preserves_other_rooms(db):
     first = await db.facilities.add(FacilityAdd(title="Pool"))
     second = await db.facilities.add(FacilityAdd(title="Spa"))

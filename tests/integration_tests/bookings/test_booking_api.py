@@ -8,18 +8,6 @@ from src.Schemas.rooms import RoomsPatchSchema
 from src.model.bookings import BookingORM
 
 
-class InvalidStayAccepted(Exception):
-    pass
-
-
-class SoldOutNotHandled(Exception):
-    pass
-
-
-class MissingBookingList(Exception):
-    pass
-
-
 @pytest.fixture
 def booking_data():
     return {"room_id": 1, "date_from": "2027-08-10", "date_to": "2027-08-15"}
@@ -68,9 +56,39 @@ async def test_booking_requires_authentication(ac, db, booking_data, method, pat
     assert await count_bookings(db) == 0
 
 
+@pytest.mark.parametrize("method,path", [("post", "/booking"), ("get", "/booking/me")])
+async def test_booking_rejects_deleted_user_token(
+    auth_ac, db, user_data, booking_data, method, path
+):
+    user = await db.users.get_user_with_hashed(email=user_data["email"])
+    await db.users.delete(id=user.id)
+    await db.commit()
+
+    kwargs = {"json": booking_data} if method == "post" else {}
+    response = await auth_ac.request(method, path, **kwargs)
+
+    assert response.status_code == 401
+    assert await count_bookings(db) == 0
+
+
 async def test_booking_unknown_room_returns_404(auth_ac, db, booking_data):
     response = await auth_ac.post("/booking", json={**booking_data, "room_id": 999999})
     assert response.status_code == 404
+    assert await count_bookings(db) == 0
+
+
+@pytest.mark.parametrize("room_id", [0, 2147483648])
+async def test_booking_body_room_id_rejects_values_outside_postgres_range(auth_ac, db, booking_data, room_id):
+    response = await auth_ac.post("/booking", json={**booking_data, "room_id": room_id})
+    assert response.status_code == 422, response.text
+    assert await count_bookings(db) == 0
+
+
+async def test_booking_body_room_id_accepts_postgres_integer_max(auth_ac, db, booking_data):
+    response = await auth_ac.post(
+        "/booking", json={**booking_data, "room_id": 2147483647}
+    )
+    assert response.status_code == 404, response.text
     assert await count_bookings(db) == 0
 
 
@@ -92,65 +110,29 @@ async def test_booking_invalid_types(auth_ac, db, booking_data, field, value):
     assert await count_bookings(db) == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=InvalidStayAccepted,
-    reason="AddBookingRequest does not reject empty/reversed stay intervals",
-)
 @pytest.mark.parametrize("date_to", ["2027-08-10", "2027-08-09"])
 async def test_booking_rejects_invalid_date_order(auth_ac, db, booking_data, date_to):
     response = await auth_ac.post("/booking", json={**booking_data, "date_to": date_to})
-    if response.status_code == 200:
-        saved = await db.booking.get_one_or_none(id=response.json()["data"]["id"])
-        assert saved.date_from == date.fromisoformat(booking_data["date_from"])
-        assert saved.date_to == date.fromisoformat(date_to)
-        assert await count_bookings(db) == 1
-        raise InvalidStayAccepted("The invalid interval was persisted")
     assert response.status_code == 422
     assert await count_bookings(db) == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=SoldOutNotHandled,
-    reason="BookingRepository.add_booking raises bare Exception on sold-out room instead of HTTP 409",
-)
 async def test_sold_out_booking_returns_conflict(auth_ac, db, booking_data):
     await db.rooms.put(RoomsPatchSchema(quantity=1), exclude_unset=True, id=1)
     await db.commit()
     first = await auth_ac.post("/booking", json=booking_data)
     assert first.status_code == 200
-    try:
-        second = await auth_ac.post("/booking", json=booking_data)
-    except Exception as error:
-        assert type(error) is Exception
-        assert error.args == ()
-        assert await count_bookings(db) == 1
-        raise SoldOutNotHandled(
-            "The second booking was rejected without an HTTP response"
-        ) from error
+    second = await auth_ac.post("/booking", json=booking_data)
     assert await count_bookings(db) == 1
     assert second.status_code == 409
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=MissingBookingList,
-    reason="BaseRepository.get_filtered returns None, so /booking/me returns null",
-)
 async def test_my_bookings_empty_list(auth_ac):
     response = await auth_ac.get("/booking/me")
     assert response.status_code == 200
-    if response.json() is None:
-        raise MissingBookingList("Expected an empty list, got null")
     assert response.json() == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=MissingBookingList,
-    reason="BaseRepository.get_filtered discards mapped rows, so /booking/me cannot return owned bookings",
-)
 async def test_my_bookings_contains_only_current_user(
     auth_ac, db, user_data, booking_data
 ):
@@ -173,19 +155,12 @@ async def test_my_bookings_contains_only_current_user(
     response = await auth_ac.get("/booking/me")
     assert response.status_code == 200
     assert await count_bookings(db) == 2
-    if response.json() is None:
-        raise MissingBookingList("Two bookings exist, but the endpoint returns null")
     assert isinstance(response.json(), list)
     assert [item["id"] for item in response.json()] == [own.json()["data"]["id"]]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AttributeError,
-    reason="BookingRepository declares schema instead of mapper; nonempty /booking cannot serialize bookings",
-)
-async def test_get_all_bookings(admin_ac, booking_data):
-    created = await admin_ac.post("/booking", json=booking_data)
+async def test_get_all_bookings(admin_ac, auth_ac, booking_data):
+    created = await auth_ac.post("/booking", json=booking_data)
     assert created.status_code == 200
     response = await admin_ac.get("/booking")
     assert response.status_code == 200

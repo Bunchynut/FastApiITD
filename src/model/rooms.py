@@ -1,11 +1,15 @@
 from src.DataBase import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String,ForeignKey
+from sqlalchemy import CheckConstraint, ForeignKey, String
 
 
 class RoomsOrm(Base):
 
     __tablename__ = 'rooms'
+    __table_args__ = (
+        CheckConstraint("price >= 0", name="ck_rooms_price_nonnegative"),
+        CheckConstraint("quantity >= 0", name="ck_rooms_quantity_nonnegative"),
+    )
 
 
     id : Mapped[int] = mapped_column(primary_key=True)

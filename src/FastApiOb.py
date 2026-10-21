@@ -16,16 +16,24 @@ from src.api.booking import router as booking_router
 from src.api.facilities import router as facilities_router
 from src.api.images import router as images_router
 from src.config import settings
+from src.middleware import ImageUploadSizeLimitMiddleware
+from src.upload_limits import MAX_IMAGE_REQUEST_BYTES
 print(f'{settings.DB_NAME=}')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await redis_manager.connect()
-    FastAPICache.init(RedisBackend(redis_manager.redis), prefix='fastapi-cache')
-    yield
-    await redis_manager.close()
+    try:
+        FastAPICache.init(RedisBackend(redis_manager.redis), prefix='fastapi-cache')
+        yield
+    finally:
+        await redis_manager.close()
 
 app = FastAPI(docs_url=None, redoc_url=None, lifespan=lifespan)
+app.add_middleware(
+    ImageUploadSizeLimitMiddleware,
+    max_bytes=MAX_IMAGE_REQUEST_BYTES,
+)
 
 app.include_router(users_router)
 app.include_router(hotels_router)

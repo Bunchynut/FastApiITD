@@ -1,3 +1,5 @@
+"""Shared fixtures; unit tests never connect to a database."""
+
 import os
 from pathlib import Path
 
@@ -7,6 +9,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env-test", override=False)
 
+# Defaults support offline unit tests; explicit environment variables win.
 for key, value in {
     "MODE": "TEST",
     "DB_HOST": "localhost",

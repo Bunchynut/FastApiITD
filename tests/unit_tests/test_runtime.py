@@ -2,12 +2,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from alembic.config import Config
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 
 from src import FastApiOb as application
 from src.connectors import redis_connectors
 from src.connectors.redis_connectors import RedisManager
+from sqlalchemy.engine import make_url
 
 
 @pytest.fixture
@@ -83,11 +85,6 @@ async def test_lifespan_connects_initializes_cache_and_closes(lifespan_manager):
     lifespan_manager.close.assert_awaited_once_with()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="lifespan has no finally block, so Redis stays open when the app body raises",
-)
 async def test_lifespan_closes_connection_when_body_raises(lifespan_manager):
     error = RuntimeError("application failed")
     with pytest.raises(RuntimeError) as caught:
@@ -116,3 +113,29 @@ async def test_docs_and_openapi_are_available_without_external_services():
         "/facilities/",
         "/images",
     } <= set(schema.json()["paths"])
+
+
+@pytest.mark.parametrize("password", ["p@ss", "p%ss"])
+def test_database_url_preserves_special_characters_in_password(password):
+    from src.config import Settings
+
+    configured = Settings(
+        MODE="TEST",
+        DB_NAME="hotel",
+        DB_PORT=5432,
+        DB_USER="db-user",
+        DB_PASS=password,
+        DB_HOST="localhost",
+        REDIS_HOST="localhost",
+        REDIS_PORT=6379,
+        JWT_SECRET_KEY="test-secret",
+        JWT_ALGORITHM="HS256",
+        ACCESS_TOKEN_EXPIRE_MINUTES=30,
+    )
+
+    rendered = configured.DB_URL.render_as_string(hide_password=False)
+    assert make_url(rendered).password == password
+
+    alembic_config = Config()
+    alembic_config.set_main_option("sqlalchemy.url", rendered.replace("%", "%%"))
+    assert make_url(alembic_config.get_main_option("sqlalchemy.url")).password == password

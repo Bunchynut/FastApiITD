@@ -44,17 +44,18 @@ API реализует работу с:
 ```text
 FastApiITD/
 ├── src/
-│   ├── users/
-│   ├── hotels/
-│   ├── rooms/
-│   ├── bookings/
-│   ├── facilities/
-│   ├── images/
+│   ├── api/
+│   ├── Schemas/
+│   ├── model/
+│   ├── repositories/
+│   ├── migrations/
+│   ├── serves/
+│   ├── tasks/
+│   ├── static/images/
 │   ├── DataBase.py
 │   └── FastApiOb.py
 │
 ├── tests/
-├── migrations/
 ├── alembic.ini
 ├── pytest.ini
 ├── requirements.txt
@@ -71,6 +72,17 @@ FastApiITD/
 Пользователь может зарегистрироваться и авторизоваться в приложении.
 
 Для защищённых эндпоинтов используется проверка JWT-токена.
+Новые пароли хранятся с PBKDF2-SHA256; старые bcrypt-хеши остаются совместимыми.
+
+После входа приложение проверяет роль пользователя в PostgreSQL. Новые
+аккаунты получают роль `user`; создание и изменение отелей, номеров,
+удобств, загрузка изображений и просмотр всех бронирований доступны роли
+`admin`. Чтобы назначить первого администратора, зарегистрируйте пользователя
+и выполните в PostgreSQL:
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';
+```
 
 ---
 
@@ -99,6 +111,18 @@ Redis используется для кеширования данных при
 
 Для работы с кешем используется **FastAPI Cache**.
 
+Redis также используется как брокер Celery и должен быть доступен по
+`REDIS_HOST` и `REDIS_PORT` во время работы приложения и фоновых задач.
+Если Redis установлен в Ubuntu WSL, откройте `wsl -d Ubuntu` и оставьте
+терминал запущенным. Команда `redis-cli ping` внутри Ubuntu должна вернуть `PONG`.
+
+Для обработки изображений отдельно запустите worker из корня проекта
+с активированным виртуальным окружением. Для локального запуска на Windows:
+
+```bash
+python -m celery -A src.tasks.celery_app:celery_app worker --pool=solo --loglevel=INFO
+```
+
 ---
 
 # Тестирование
@@ -110,7 +134,7 @@ Redis используется для кеширования данных при
 * AsyncClient
 * ASGITransport
 
-Для интеграционных тестов используется отдельная схема в тестовой PostgreSQL и откат данных после каждого теста. Unit-тесты не требуют внешних сервисов. Установка, команды запуска и известные ошибки описаны в [tests/README.md](tests/README.md).
+Для интеграционных тестов используется отдельная схема в тестовой PostgreSQL и откат данных после каждого теста. Unit-тесты не требуют внешних сервисов. Установка, команды запуска и ограничения проверок описаны в [tests/README.md](tests/README.md).
 
 Запуск тестов:
 
@@ -166,8 +190,12 @@ DB_USER=postgres
 DB_PASS=your_password
 DB_NAME=hotels
 
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
 JWT_SECRET_KEY=your_secret_key
 JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
 
 Файлы `.env`, содержащие пароли и секретные ключи, не должны добавляться в Git.
@@ -190,11 +218,7 @@ fastapi dev src/FastApiOb.py
 http://127.0.0.1:8000/docs
 ```
 
-Документация ReDoc:
-
-```text
-http://127.0.0.1:8000/redoc
-```
+ReDoc отключён.
 
 ---
 
@@ -206,10 +230,13 @@ http://127.0.0.1:8000/redoc
 /users
 /hotels
 /rooms
-/bookings
+/booking
 /facilities
 /images
 ```
+
+Загруженные оригиналы хранятся в `src/static/images`, а варианты изображений —
+в подкаталоге `src/static/images/thumbnails`.
 
 Подробное описание эндпоинтов доступно через Swagger UI после запуска приложения.
 

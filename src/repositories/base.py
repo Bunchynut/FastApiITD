@@ -15,7 +15,7 @@ class BaseRepository():
     async def get_filtered(self, *filter, **filter_by):
         query = select(self.model).filter(*filter).filter_by(**filter_by)
         result = await self.session.execute(query)
-        models = result.scalars().all()
+        return [self.mapper.map_to_domain_entity(model) for model in result.scalars().all()]
 
 
     async def get_all(self, *args, **kwargs):
@@ -51,20 +51,6 @@ class BaseRepository():
             update(self.model).filter_by(**filter_by).values(**data.model_dump(exclude_unset=exclude_unset,exclude={'facilities_ids'}))
         )
         await self.session.execute(put_hotel_stmt)
-
-    async def put_bulk(self,data: list[BaseModel],exclude_unset: bool = False,**filter_by) -> None:
-        put_hotel_stmt = update(self.model).filter_by(**filter_by).values([item.model_dump(exclude_unset=exclude_unset,exclude={'facilities_ids'}) for item in data])
-        await self.session.execute(put_hotel_stmt)
-
-
-
-
-
-
-
-
-
-
 
 
 
